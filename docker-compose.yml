@@ -1,0 +1,46 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: go_rnd_db
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "${DB_LOCAL_PORT}:${DB_PORT}"
+    restart: unless-stopped
+    volumes:
+      - go_rnd_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Run the migrations first (`make migrate_up`), then `./build.sh && ./deploy.sh`
+  # (both read the tag from VERSION).
+  app:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      labels:
+        - "project=go_rnd_api_label"
+    container_name: go_rnd_api
+    image: go_rnd_api:${VERSION}
+    restart: "no"
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      DB_SOURCE: postgresql://${DB_USER}:${DB_PASSWORD}@postgres:${DB_PORT}/${DB_NAME}?sslmode=disable
+    volumes:
+      - ./internal/platform/config/ec-private.pem:/app/internal/platform/config/ec-private.pem:ro
+      - ./internal/platform/config/ec-public.pem:/app/internal/platform/config/ec-public.pem:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  go_rnd_db_data:
